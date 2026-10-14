@@ -1,0 +1,7 @@
+{
+  "id": "claude-progress",
+  "description": "Shows Claude's progress above the composer: the short description of each step while it works, and a recap when it stops.",
+  "requirements": {
+    "paseo": ">=0.9.1"
+  }
+}
