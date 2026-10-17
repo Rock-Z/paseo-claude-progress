@@ -82,8 +82,8 @@ export default function contribute(client: PluginClientContext) {
 
   // Paseo times plugin calls out after 30 s; a recap queued behind others keeps going, so ask for it
   // again, for up to 5 minutes.
-  const requestRecap = (entry: Tracked, attempts = 10): Promise<void> =>
-    client.rpc(recapRpc, { agentId: entry.agent.id }).then(
+  const requestRecap = (entry: Tracked, saved: boolean, attempts = 10): Promise<void> =>
+    client.rpc(recapRpc, { agentId: entry.agent.id, saved }).then(
       ({ recap }) => {
         if (!recap || tracked.get(entry.agent.id) !== entry || entry.agent.status !== "idle") return;
         entry.recap = recap;
@@ -91,7 +91,7 @@ export default function contribute(client: PluginClientContext) {
       },
       (error) =>
         attempts > 1
-          ? requestRecap(entry, attempts - 1)
+          ? requestRecap(entry, saved, attempts - 1)
           : console.error("Claude recap failed", error),
     );
 
@@ -102,7 +102,7 @@ export default function contribute(client: PluginClientContext) {
     if (!known) {
       tracked.set(agent.id, entry);
       loadSteps(entry);
-      if (agent.status === "idle") requestRecap(entry);
+      if (agent.status === "idle") requestRecap(entry, true);
     }
     entry.agent = agent;
     const running = agent.status === "running";
@@ -117,7 +117,7 @@ export default function contribute(client: PluginClientContext) {
     }
     // On every update: a permission prompt pauses Claude's work without ending the turn.
     render(entry);
-    if (turnChanged && !running && known) requestRecap(entry);
+    if (turnChanged && !running && known) requestRecap(entry, false);
   };
 
   const drop = (agentId: string) => {

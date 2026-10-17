@@ -17,9 +17,10 @@ export const stepsRpc = defineRpc({
 });
 
 // A recap in Claude Code's style of the agent's last turn, made when the turn ends, or when asked
-// if the daemon missed that.
+// if the daemon missed that. With `saved`, only a recap already made: none is made for turns that
+// ended before the plugin ran, so opening Paseo doesn't recap every idle agent.
 export const recapRpc = defineRpc({
   name: "recap",
-  input: z.object({ agentId: z.string() }),
+  input: z.object({ agentId: z.string(), saved: z.boolean().optional() }),
   output: z.object({ recap: updateSchema.nullable() }),
 });

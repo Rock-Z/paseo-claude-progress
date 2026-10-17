@@ -55,14 +55,23 @@ const run = promisify(execFile);
 const logs = new Map<string, LogState>();
 // One recap per agent, kept until its next turn starts.
 const recaps = new Map<string, Promise<Update | null>>();
+// Claude agents mid-turn, from Paseo's turn hooks. Paseo can show an agent idle for a moment as its
+// turn starts, so a client seeing a turn end isn't enough to make a recap.
+const turns = new Set<string>();
 // Recaps are made one at a time, so agents finishing together don't start a burst of processes.
 let recapQueue: Promise<unknown> = Promise.resolve();
 
 // Aborted when the plugin stops, so no poll or recap outlives the plugin's connection to Paseo.
 export const stopping = new AbortController();
 
-export function forgetRecap(agentId: string) {
+export function startTurn(agentId: string) {
+  turns.add(agentId);
   recaps.delete(agentId);
+}
+
+export function endTurn(paseo: Paseo, agentId: string) {
+  turns.delete(agentId);
+  startRecap(paseo, agentId);
 }
 
 // Paseo's timeline drops the short description Claude writes for a tool call; Claude's session log
@@ -82,18 +91,23 @@ export async function getSteps(
   }
 }
 
-export async function getRecap({ agentId }: RpcInput<typeof recapRpc>, { paseo }: PluginHandlerContext) {
+export async function getRecap({ agentId, saved }: RpcInput<typeof recapRpc>, { paseo }: PluginHandlerContext) {
+  // A client can see a turn end just before Paseo's hook does, or see one end that hasn't: wait for the hook.
+  for (let waited = 0; turns.has(agentId) && waited < STEP_WAIT_MS; waited += POLL_MS) {
+    await sleep(POLL_MS, undefined, { signal: stopping.signal });
+  }
+  if ((saved || turns.has(agentId)) && !recaps.has(agentId)) return { recap: await recapFor(paseo, agentId, false) };
   startRecap(paseo, agentId);
   return { recap: (await recaps.get(agentId)) ?? null };
 }
 
-// Called when a Claude turn ends, and by clients that see an agent idle, whichever comes first.
-export function startRecap(paseo: Paseo, agentId: string) {
+// Called when a Claude turn ends, and by clients that see one end that the plugin missed.
+function startRecap(paseo: Paseo, agentId: string) {
   if (!recaps.has(agentId)) recaps.set(agentId, recapFor(paseo, agentId));
 }
 
-// The saved recap while Claude's last reply is the one it follows; otherwise a new one.
-async function recapFor(paseo: Paseo, agentId: string) {
+// The saved recap while Claude's last reply is the one it follows; otherwise a new one, if `make`.
+async function recapFor(paseo: Paseo, agentId: string, make = true) {
   const path = await sessionLog(paseo, agentId);
   if (!path) return null;
   const file = join(RECAP_DIR, `${basename(path, ".jsonl")}.json`);
@@ -102,6 +116,7 @@ async function recapFor(paseo: Paseo, agentId: string) {
     readFile(file, "utf8").then(JSON.parse, () => null),
   ]);
   if (replyId && saved?.replyId === replyId) return saved.recap as Update;
+  if (!make) return null;
   const recap = recapQueue.then(() => summarize(path, file));
   recapQueue = recap.catch(() => undefined);
   return recap;
