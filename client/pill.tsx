@@ -11,7 +11,7 @@ import {
 } from "react";
 import { type ScrollView as NativeScrollView, Platform, Text, View } from "react-native";
 import type { Update } from "../shared/rpc";
-import { fitPill } from "./web";
+import { fitPill, widenPopover } from "./web";
 
 export interface Progress {
   running: boolean;
@@ -132,7 +132,7 @@ export function ProgressPanel({ theme, ...target }: PluginButtonContentProps) {
   return (
     // Paseo pads the popover 12 px plus 4 px more vertically, each row adds 2 px, and the last line
     // keeps its descender space: these margins put the text's ink about 12 px from every edge.
-    <View style={{ marginTop: -6, marginBottom: -8, marginLeft: -4 }}>
+    <View ref={widenPopover} style={{ marginTop: -6, marginBottom: -8, marginLeft: -4 }}>
       {/* On phones Paseo shows this in a bottom sheet that scrolls itself and sizes to what its
           scroll view reports. A second scroll view would report only these rows, and the sheet
           would shrink to them; so only web keeps its own list, which remembers where it was left. */}

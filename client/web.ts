@@ -6,10 +6,14 @@ const PILL_MAX_WIDTH = "400px";
 // Paseo's gap between a pill's icon and its label, closed along with the slot.
 const PILL_GAP = "8px";
 const SLOT_TRANSITION = "width 180ms ease, margin-right 180ms ease, opacity 180ms ease";
+// Paseo caps plugin popovers at 420 px, which leaves the list 338 px, narrower than the pill's label.
+// 520 px fits 98 in 100 of Claude's step descriptions (about 70 characters) on one line. Paseo fixes
+// the width when the popover opens, so it opens at full width for the steps that arrive later.
+const POPOVER_WIDTH = "min(520px, calc(100vw - 32px))";
 
 // The DOM this module uses; the plugin's TypeScript config has no DOM library.
 interface DomElement {
-  style: { maxWidth: string; width: string; marginRight: string; opacity: string; transition: string };
+  style: { maxWidth: string; minWidth: string; width: string; marginRight: string; opacity: string; transition: string };
   parentElement: DomElement | null;
   closest(selector: string): DomElement | null;
   contains(other: unknown): boolean;
@@ -24,6 +28,7 @@ interface PointerLikeEvent {
   stopImmediatePropagation(): void;
   constructor: new (type: string, init: object) => unknown;
 }
+declare function getComputedStyle(element: DomElement): { maxWidth: string };
 declare const document: {
   addEventListener(type: string, listener: (event: PointerLikeEvent) => void, capture: boolean): void;
 };
@@ -66,6 +71,20 @@ export function fitPill(node: unknown, markWidth: string | null) {
     document.addEventListener(type, (event) => {
       if (pillHolding(event.target)) event.stopImmediatePropagation();
     }, true);
+  }
+}
+
+// On web, widen the popover that holds this node: the first ancestor with a width cap is Paseo's.
+// Paseo 0.9 through 0.12 caps it at 420 px; any other cap means its layout changed, so leave it be.
+export function widenPopover(node: unknown) {
+  if (Platform.OS !== "web" || !node) return;
+  for (let element = (node as DomElement).parentElement; element; element = element.parentElement) {
+    const { maxWidth } = getComputedStyle(element);
+    if (maxWidth === "none") continue;
+    if (maxWidth !== "420px") return;
+    element.style.maxWidth = POPOVER_WIDTH;
+    element.style.minWidth = POPOVER_WIDTH;
+    return;
   }
 }
 
