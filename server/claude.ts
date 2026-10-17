@@ -30,7 +30,8 @@ interface LogState {
 const POLL_MS = 500;
 // Stays under Paseo's 30 s plugin call timeout; a call held at a permission prompt is logged later.
 const STEP_WAIT_MS = 20_000;
-// Claude Code's own recap instruction (Claude Code 2.1.284), applied to a condensed transcript.
+// Claude Code's own recap instruction (unchanged from 2.1.284 through 2.1.299), applied to a condensed transcript.
+// Reused verbatim so recaps read like Claude Code's own "while you were away" recaps, not a prompt of our own tuning.
 const RECAP_PROMPT =
   "The user stepped away and is coming back. Recap in under 40 words, 1-2 plain sentences, no markdown. Lead with the overall goal and current task, then the one next action. Skip root-cause narrative, fix internals, secondary to-dos, and em-dash tangents.";
 // A one-off Claude Code call with no settings, tools, MCP servers or session file of its own.
@@ -43,7 +44,7 @@ const RECAP_COMMAND = [
   "--strict-mcp-config",
   "--no-session-persistence",
   "--model",
-  "claude-haiku-4-5",
+  "haiku", // alias for the newest Haiku
 ];
 const CLIP = 4000;
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
