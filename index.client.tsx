@@ -44,7 +44,7 @@ export default function contribute(client: PluginClientContext) {
       return;
     }
     const button = {
-      title: "Claude",
+      title: "Status and recaps",
       icon: working ? StepIcon : QuietIcon,
       label: latest.text.replace(/\s+/g, " "),
       visible: true,
