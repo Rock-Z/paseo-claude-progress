@@ -2,6 +2,20 @@
 
 A [Paseo](https://github.com/getpaseo/paseo) plugin that shows Claude Code's progress above the composer: a short description of each step while Claude works, and a recap of the turn when it stops.
 
+<img alt="A real Opus 5.5 run, sped up: the pill shows each step while Claude works, the list of steps on click, and a recap when Claude stops" src="images/demo.gif">
+
+A real Opus 5.5 run, sped up ([full-quality video](https://raw.githubusercontent.com/Rock-Z/paseo-claude-progress/main/images/demo.mp4)).
+
+## What it shows
+
+The Claude Code CLI shows a short description of each step Claude takes and a recap when Claude stops. Paseo shows neither. This plugin adds a pill above the composer of Claude agents:
+
+- **While Claude works:** the description of its latest `Bash`, `Monitor` or `Agent` call, with Claude Code's Unicode-character spinner.
+- **When a turn ends:** a recap of the turn in under 40 words. Claude Haiku writes it from a short summary of the turn, using Claude Code's own recap prompt (see [How it works](#how-it-works)).
+- **On click:** the steps of the current turn, with times. Arrows at the bottom right flip through the session's earlier turns and their recaps. On web, the list keeps its scroll position and jumps to new steps.
+
+## Screenshots
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/dark-working.png">
   <img alt="While Claude works, the pill above the composer shows its current step with a spinner; clicking it lists the turn's steps" src="images/light-working.png">
@@ -11,16 +25,6 @@ A [Paseo](https://github.com/getpaseo/paseo) plugin that shows Claude Code's pro
   <source media="(prefers-color-scheme: dark)" srcset="images/dark-recap.png">
   <img alt="When Claude stops, the pill shows a recap of the turn below its steps" src="images/light-recap.png">
 </picture>
-
-Demo (a real Opus 5.5 run, sped up): https://raw.githubusercontent.com/Rock-Z/paseo-claude-progress/main/images/demo.mp4
-
-## What it shows
-
-The Claude Code CLI shows a short description of each step Claude takes and a recap when Claude stops. Paseo shows neither. This plugin adds a pill above the composer of Claude agents:
-
-- **While Claude works:** the description of its latest `Bash`, `Monitor` or `Agent` call, with Claude Code's Unicode-character spinner.
-- **When a turn ends:** a recap of the turn in under 40 words. Claude Haiku writes it from a short summary of the turn, using Claude Code's own recap prompt (see [How it works](#how-it-works)).
-- **On click:** the steps of the current turn, with times. Arrows at the bottom right flip through the session's earlier turns and their recaps. On web, the list keeps its scroll position and jumps to new steps.
 
 ## Install
 
