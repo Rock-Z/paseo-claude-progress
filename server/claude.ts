@@ -101,9 +101,18 @@ export async function getRecap({ agentId, saved }: RpcInput<typeof recapRpc>, { 
   return { recap: (await recaps.get(agentId)) ?? null };
 }
 
-// Called when a Claude turn ends, and by clients that see one end that the plugin missed.
+// Called when a Claude turn ends, and by clients that see one end that the plugin missed. The hook
+// doesn't wait for the recap, so a failure (such as the daemon connection closing mid-call) is
+// caught here: unhandled, it would end the plugin's process. A failed recap is forgotten, so a
+// client can ask for it again.
 function startRecap(paseo: Paseo, agentId: string) {
-  if (!recaps.has(agentId)) recaps.set(agentId, recapFor(paseo, agentId));
+  if (recaps.has(agentId)) return;
+  const recap = recapFor(paseo, agentId).catch((error) => {
+    console.error("Claude recap failed", error);
+    if (recaps.get(agentId) === recap) recaps.delete(agentId);
+    return null;
+  });
+  recaps.set(agentId, recap);
 }
 
 // The saved recap while Claude's last reply is the one it follows; otherwise a new one, if `make`.
