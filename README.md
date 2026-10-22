@@ -2,9 +2,12 @@
 
 A [Paseo](https://github.com/getpaseo/paseo) plugin that shows Claude Code's progress above the composer: a short description of each step while Claude works, and a recap of the turn when it stops.
 
-<img alt="A real Opus 5.5 run, sped up: the pill shows each step while Claude works, the list of steps on click, and a recap when Claude stops" src="images/demo.gif">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/dark-demo.gif">
+  <img alt="A real Opus 5.5 run, sped up: the pill shows each step while Claude works, the list of steps on click, and a recap when Claude stops" src="images/light-demo.gif">
+</picture>
 
-A real Opus 5.5 run, sped up ([full-quality video](https://raw.githubusercontent.com/Rock-Z/paseo-claude-progress/main/images/demo.mp4)).
+A real Opus 5.5 run, sped up ([full-quality video, dark](https://raw.githubusercontent.com/Rock-Z/paseo-claude-progress/main/images/demo.mp4)).
 
 ## What it shows
 
