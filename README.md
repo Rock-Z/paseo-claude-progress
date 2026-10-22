@@ -20,7 +20,7 @@ The Claude Code CLI shows a short description of each step Claude takes and a re
 
 - **While Claude works:** the description of its latest `Bash`, `Monitor` or `Agent` call, with Claude Code's Unicode-character spinner.
 - **When a turn ends:** a recap of the turn in under 40 words. Claude Haiku writes it from a short summary of the turn, using Claude Code's own recap prompt (see [How it works](#how-it-works)).
-- **On click:** the steps of the current turn, with times. On web, the list keeps its scroll position and jumps to new steps.
+- **On click:** the steps of the current turn, with times. Arrows at the bottom right flip through the session's earlier turns and their recaps. On web, the list keeps its scroll position and jumps to new steps.
 
 ## Install
 

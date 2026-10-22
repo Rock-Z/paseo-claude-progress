@@ -4,7 +4,7 @@ import type {
   PluginClientContext,
 } from "@getpaseo/plugin/client";
 import { ProgressPanel, publish, QuietIcon, StepIcon } from "./client/pill";
-import { DESCRIBED_TOOLS, recapRpc, stepsRpc, type Update } from "./shared/rpc";
+import { DESCRIBED_TOOLS, type Round, recapRpc, stepsRpc, type Update } from "./shared/rpc";
 
 // The popover reads each agent's progress from `publish`, so updating the pill never replaces this
 // behavior, which would close an open popover.
@@ -23,6 +23,8 @@ interface Tracked {
   workspaceId: string;
   steps: Update[];
   recap: Update | null;
+  // The session's earlier rounds, oldest first.
+  rounds: Round[];
   pill?: PluginButtonRegistration;
   stopWatching?: () => void;
 }
@@ -35,7 +37,7 @@ export default function contribute(client: PluginClientContext) {
   const render = (entry: Tracked) => {
     // Paseo reports a turn waiting on a permission prompt as running; Claude isn't working then.
     const working = entry.agent.status === "running" && !entry.agent.pendingPermissions?.length;
-    publish(entry.agent.id, { running: working, steps: entry.steps, recap: entry.recap });
+    publish(entry.agent.id, { running: working, steps: entry.steps, recap: entry.recap, rounds: entry.rounds });
     const latest = entry.recap ?? entry.steps.at(-1);
     if (!latest) {
       entry.pill?.update({ visible: false });
@@ -60,9 +62,10 @@ export default function contribute(client: PluginClientContext) {
 
   const loadSteps = (entry: Tracked, callId?: string) =>
     client.rpc(stepsRpc, { agentId: entry.agent.id, callId }).then(
-      ({ steps }) => {
+      ({ steps, rounds }) => {
         if (tracked.get(entry.agent.id) !== entry) return;
         entry.steps = steps;
+        if (rounds) entry.rounds = rounds;
         render(entry);
       },
       (error) => console.error("Claude progress: steps failed", error),
@@ -98,7 +101,7 @@ export default function contribute(client: PluginClientContext) {
   const upsert = (agent: Agent) => {
     if (agent.provider !== "claude" || !agent.workspaceId) return;
     const known = tracked.get(agent.id);
-    const entry: Tracked = known ?? { agent, workspaceId: agent.workspaceId, steps: [], recap: null };
+    const entry: Tracked = known ?? { agent, workspaceId: agent.workspaceId, steps: [], recap: null, rounds: [] };
     if (!known) {
       tracked.set(agent.id, entry);
       loadSteps(entry);
@@ -111,13 +114,20 @@ export default function contribute(client: PluginClientContext) {
       entry.stopWatching?.();
       entry.stopWatching = running ? watchTurn(entry) : undefined;
       if (running && known) {
+        if (entry.steps.length || entry.recap) {
+          entry.rounds = [...entry.rounds, { steps: entry.steps, recap: entry.recap }];
+        }
         entry.steps = [];
         entry.recap = null;
       }
     }
     // On every update: a permission prompt pauses Claude's work without ending the turn.
     render(entry);
-    if (turnChanged && !running && known) requestRecap(entry, false);
+    if (turnChanged && !running && known) {
+      requestRecap(entry, false);
+      // Also refreshes the earlier rounds, whose last recap may have finished after this turn began.
+      loadSteps(entry);
+    }
   };
 
   const drop = (agentId: string) => {

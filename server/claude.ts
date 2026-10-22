@@ -15,10 +15,12 @@ interface Step extends Update {
 }
 
 // What has been read of one session log, so each call only reads what Claude appended since; and
-// what a recap needs: the session's first request, the latest one, and Claude's reply to it.
+// what a recap needs: the session's first request, the latest one, and Claude's reply to it. Earlier
+// rounds keep their steps and the reply their recap follows.
 interface LogState {
   offset: number;
   partial: string;
+  rounds: { steps: Step[]; replyId?: string }[];
   steps: Step[];
   goal?: string;
   request?: string;
@@ -82,13 +84,30 @@ export async function getSteps(
 ) {
   const path = await sessionLog(paseo, agentId);
   if (!path) return { steps: [] };
-  for (let waited = 0; ; waited += POLL_MS) {
-    const { steps } = await readLog(path);
-    if (!callId || waited >= STEP_WAIT_MS || steps.some((step) => step.callId === callId)) {
-      return { steps: steps.map(({ text, at }) => ({ text, at })) };
-    }
+  let log = await readLog(path);
+  for (let waited = 0; callId && waited < STEP_WAIT_MS; waited += POLL_MS) {
+    if (log.steps.some((step) => step.callId === callId)) break;
     await sleep(POLL_MS, undefined, { signal: stopping.signal });
+    log = await readLog(path);
   }
+  const steps = log.steps.map(update);
+  if (callId) return { steps };
+  // Without a call to wait for, the client is loading the agent: add the earlier rounds.
+  const saved = await savedRecaps(recapFile(path));
+  const rounds = log.rounds
+    .map(({ steps, replyId }) => ({ steps: steps.map(update), recap: (replyId && saved[replyId]) || null }))
+    .filter((round) => round.steps.length || round.recap);
+  return { steps, rounds };
+}
+
+const update = ({ text, at }: Update) => ({ text, at });
+
+const recapFile = (path: string) => join(RECAP_DIR, `${basename(path, ".jsonl")}.json`);
+
+// A session's recaps by the reply each follows. Before rounds, only the latest was saved.
+async function savedRecaps(file: string): Promise<Record<string, Update>> {
+  const saved = await readFile(file, "utf8").then(JSON.parse, () => ({}));
+  return saved.replyId ? { [saved.replyId]: saved.recap } : saved;
 }
 
 export async function getRecap({ agentId, saved }: RpcInput<typeof recapRpc>, { paseo }: PluginHandlerContext) {
@@ -119,12 +138,9 @@ function startRecap(paseo: Paseo, agentId: string) {
 async function recapFor(paseo: Paseo, agentId: string, make = true) {
   const path = await sessionLog(paseo, agentId);
   if (!path) return null;
-  const file = join(RECAP_DIR, `${basename(path, ".jsonl")}.json`);
-  const [{ replyId }, saved] = await Promise.all([
-    readLog(path),
-    readFile(file, "utf8").then(JSON.parse, () => null),
-  ]);
-  if (replyId && saved?.replyId === replyId) return saved.recap as Update;
+  const file = recapFile(path);
+  const [{ replyId }, saved] = await Promise.all([readLog(path), savedRecaps(file)]);
+  if (replyId && saved[replyId]) return saved[replyId];
   if (!make) return null;
   const recap = recapQueue.then(() => summarize(path, file));
   recapQueue = recap.catch(() => undefined);
@@ -145,7 +161,7 @@ async function summarize(path: string, file: string) {
   const { stdout } = await run("claude", [...RECAP_COMMAND, prompt], { signal: stopping.signal });
   const recap = { text: stdout.trim(), at: new Date().toISOString() };
   await mkdir(RECAP_DIR, { recursive: true });
-  await writeFile(file, JSON.stringify({ replyId, recap }));
+  await writeFile(file, JSON.stringify({ ...(await savedRecaps(file)), [replyId as string]: recap }));
   return recap;
 }
 
@@ -160,7 +176,7 @@ async function sessionLog(paseo: Paseo, agentId: string) {
 
 // Reads are chained per log so two callers never parse the same bytes twice.
 async function readLog(path: string) {
-  const log = logs.get(path) ?? { offset: 0, partial: "", steps: [], read: Promise.resolve() };
+  const log = logs.get(path) ?? { offset: 0, partial: "", rounds: [], steps: [], read: Promise.resolve() };
   logs.set(path, log);
   const next = log.read.then(() => readAppended(path, log));
   log.read = next.catch(() => undefined);
@@ -191,6 +207,7 @@ async function readAppended(path: string, log: LogState) {
         .join("\n");
       // The user's prompts are text blocks; tool results, task notifications and injected context are not.
       if (entry.type === "user" && !entry.isMeta && content[0]?.type === "text") {
+        if (log.request !== undefined) log.rounds.push({ steps: log.steps, replyId: log.replyId });
         log.goal ??= text;
         log.request = text;
         log.reply = undefined;

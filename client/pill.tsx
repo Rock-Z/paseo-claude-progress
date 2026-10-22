@@ -9,14 +9,15 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { type ScrollView as NativeScrollView, Platform, Text, View } from "react-native";
-import type { Update } from "../shared/rpc";
+import { type ScrollView as NativeScrollView, Platform, Pressable, Text, View } from "react-native";
+import type { Round, Update } from "../shared/rpc";
 import { fitPill, widenPopover } from "./web";
 
 export interface Progress {
   running: boolean;
   steps: readonly Update[];
   recap: Update | null;
+  rounds: readonly Round[];
 }
 
 // Claude Code's spinner glyphs, forward then back, one frame every 120 ms. ✳ is also an emoji, which
@@ -95,12 +96,21 @@ export function ProgressPanel({ theme, ...target }: PluginButtonContentProps) {
     else if (pending.current !== null) list.current?.scrollTo({ y: pending.current, animated: false });
     pending.current = null;
   };
+  const [page, setPage] = useState<number | null>(null);
   if (!state) return null;
   const muted = theme.colors.foregroundMuted;
+  // The round on show: one picked with the arrows, or the latest (null), which stays live.
+  const latest = state.rounds.length;
+  const index = page ?? latest;
+  const round = index < latest ? { ...state.rounds[index], running: false } : state;
+  const flip = (to: number) => {
+    pending.current = "end";
+    setPage(to < latest ? to : null);
+  };
   const rows = (
     <>
-      {state.steps.map((step, index) => {
-        const current = state.running && index === state.steps.length - 1;
+      {round.steps.map((step, index) => {
+        const current = round.running && index === round.steps.length - 1;
         const color = current ? theme.colors.foreground : muted;
         return (
           <Row
@@ -113,16 +123,16 @@ export function ProgressPanel({ theme, ...target }: PluginButtonContentProps) {
           </Row>
         );
       })}
-      {state.recap ? (
+      {round.recap ? (
         <>
-          {state.steps.length ? (
+          {round.steps.length ? (
             <View style={{ height: 1, marginVertical: 4, backgroundColor: theme.colors.border }} />
           ) : null}
           {/* Claude Code prints a recap as a bold "recap:" and the recap in italics, all dimmed. */}
-          <Row mark={<Mark color={muted}>※</Mark>} at={state.recap.at} muted={muted}>
+          <Row mark={<Mark color={muted}>※</Mark>} at={round.recap.at} muted={muted}>
             <Text style={{ color: muted }}>
               <Text style={{ fontWeight: "600" }}>recap: </Text>
-              <Text style={{ fontStyle: "italic" }}>{state.recap.text}</Text>
+              <Text style={{ fontStyle: "italic" }}>{round.recap.text}</Text>
             </Text>
           </Row>
         </>
@@ -151,7 +161,28 @@ export function ProgressPanel({ theme, ...target }: PluginButtonContentProps) {
       ) : (
         rows
       )}
+      {latest ? (
+        <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 16 }}>
+          <Arrow label="Earlier round" color={muted} disabled={index === 0} onPress={() => flip(index - 1)}>
+            ‹
+          </Arrow>
+          <Arrow label="Later round" color={muted} disabled={index === latest} onPress={() => flip(index + 1)}>
+            ›
+          </Arrow>
+        </View>
+      ) : null}
     </View>
+  );
+}
+
+// Flips between the session's rounds; dimmed at either end.
+function Arrow(props: { label: string; color: string; disabled: boolean; onPress: () => void; children: string }) {
+  return (
+    <Pressable accessibilityLabel={props.label} disabled={props.disabled} onPress={props.onPress} hitSlop={8}>
+      <Text style={{ color: props.color, opacity: props.disabled ? 0.35 : 1, fontSize: 20, lineHeight: 20 }}>
+        {props.children}
+      </Text>
+    </Pressable>
   );
 }
 

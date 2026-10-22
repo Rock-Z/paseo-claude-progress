@@ -8,12 +8,16 @@ export const DESCRIBED_TOOLS = new Set(["Bash", "Monitor", "Agent", "Task"]);
 const updateSchema = z.object({ text: z.string(), at: z.string() });
 export type Update = z.infer<typeof updateSchema>;
 
+// One earlier round of the session: its steps, and its recap if one was made.
+const roundSchema = z.object({ steps: z.array(updateSchema), recap: updateSchema.nullable() });
+export type Round = z.infer<typeof roundSchema>;
+
 // Claude's descriptions of its calls since the last prompt. With `callId`, waits until that call
-// is logged.
+// is logged; without, also the earlier rounds.
 export const stepsRpc = defineRpc({
   name: "steps",
   input: z.object({ agentId: z.string(), callId: z.string().optional() }),
-  output: z.object({ steps: z.array(updateSchema) }),
+  output: z.object({ steps: z.array(updateSchema), rounds: z.array(roundSchema).optional() }),
 });
 
 // A recap in Claude Code's style of the agent's last turn, made when the turn ends, or when asked
