@@ -173,10 +173,9 @@ export function ProgressPanel({ theme, ...target }: PluginButtonContentProps) {
       {subagents.map((subagent, index) => (
         <Row
           key={`subagent-${index}`}
-          mark={index ? null : <Mark color={muted}>⎿</Mark>}
+          mark={<Branch color={theme.colors.border} last={index === subagents.length - 1} />}
           at={subagent.at}
           muted={muted}
-          indent
           trailer={!round.recap && index === subagents.length - 1 ? arrows : null}
         >
           <Text style={{ color: muted }}>
@@ -288,21 +287,28 @@ function Mark({ color, children }: { color: string; children: string }) {
   return <Text style={{ color, fontSize: FONT_SIZE, lineHeight: LINE_HEIGHT }}>{children}</Text>;
 }
 
-// One line per update, set like the pill's label: mark, text wrapping tightly, time on the right
-// and an optional trailer at the bottom right, beside the text's last line. An indented row sits
-// under the step above it, its mark under that step's text.
-function Row(props: {
-  mark: ReactNode;
-  at: string;
-  muted: string;
-  indent?: boolean;
-  trailer?: ReactNode;
-  children: ReactElement;
-}) {
-  const { mark, at, muted, indent, trailer, children } = props;
+// A subagent's tree line, drawn in its row's mark slot: down from the step above, through every
+// subagent but the last, with a tick across to each one's text.
+function Branch({ color, last }: { color: string; last: boolean }) {
+  const line = { position: "absolute", left: 5, backgroundColor: color } as const;
+  // The slot spans its row's text; the row's 2 px padding above and below joins the lines.
   return (
-    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 6, paddingVertical: 2, paddingLeft: indent ? 17 : 0 }}>
-      <View style={{ width: 11, height: LINE_HEIGHT, alignItems: "center", justifyContent: "center" }}>
+    <>
+      <View style={{ ...line, width: 1, top: -2, ...(last ? { height: 2 + LINE_HEIGHT / 2 } : { bottom: -2 }) }} />
+      <View style={{ ...line, height: 1, top: LINE_HEIGHT / 2, width: 10 }} />
+    </>
+  );
+}
+
+// One line per update, set like the pill's label: mark, text wrapping tightly, time on the right
+// and an optional trailer at the bottom right, beside the text's last line.
+function Row(props: { mark: ReactNode; at: string; muted: string; trailer?: ReactNode; children: ReactElement }) {
+  const { mark, at, muted, trailer, children } = props;
+  return (
+    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 6, paddingVertical: 2 }}>
+      {/* As tall as the row, so a subagent's tree line reaches the next row past wrapped text; marks
+          are set on one 16 px line, so they sit on the first. */}
+      <View style={{ width: 11, alignSelf: "stretch", alignItems: "center" }}>
         {mark}
       </View>
       <View style={{ flex: 1 }}>
