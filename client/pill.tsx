@@ -17,7 +17,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import type { Round, Update } from "../shared/rpc";
+import type { Round, Subagent, Update } from "../shared/rpc";
 import { fitPill, widenPopover } from "./web";
 
 export interface Progress {
@@ -25,6 +25,7 @@ export interface Progress {
   steps: readonly Update[];
   recap: Update | null;
   rounds: readonly Round[];
+  subagents: readonly Subagent[];
 }
 
 // Claude Code's spinner glyphs, forward then back, one frame every 120 ms. ✳ is also an emoji, which
@@ -124,6 +125,10 @@ export function ProgressPanel({ theme, ...target }: PluginButtonContentProps) {
   const latest = state.rounds.length;
   const index = page ?? latest;
   const round = index < latest ? { ...state.rounds[index], running: false } : state;
+  // Subagents still at work show in the latest round, as Claude Code shows them: one line each with its
+  // latest step, under Claude's latest step, gone once they finish. They keep that step's spinner going.
+  const subagents = index < latest ? [] : state.subagents;
+  const live = round.running || subagents.length > 0;
   const flip = (to: number) => {
     pending.current = "end";
     setPage(to < latest ? to : null);
@@ -151,7 +156,7 @@ export function ProgressPanel({ theme, ...target }: PluginButtonContentProps) {
   const rows = (
     <>
       {round.steps.map((step, index) => {
-        const current = round.running && index === round.steps.length - 1;
+        const current = live && index === round.steps.length - 1;
         const color = current ? theme.colors.foreground : muted;
         return (
           <Row
@@ -159,15 +164,30 @@ export function ProgressPanel({ theme, ...target }: PluginButtonContentProps) {
             mark={current ? <Spinner color={color} lineHeight={LINE_HEIGHT} /> : <Mark color={color}>-</Mark>}
             at={step.at}
             muted={muted}
-            trailer={!round.recap && index === round.steps.length - 1 ? arrows : null}
+            trailer={!round.recap && !subagents.length && index === round.steps.length - 1 ? arrows : null}
           >
             <Text style={{ color }}>{step.text}</Text>
           </Row>
         );
       })}
+      {subagents.map((subagent, index) => (
+        <Row
+          key={`subagent-${index}`}
+          mark={index ? null : <Mark color={muted}>⎿</Mark>}
+          at={subagent.at}
+          muted={muted}
+          indent
+          trailer={!round.recap && index === subagents.length - 1 ? arrows : null}
+        >
+          <Text style={{ color: muted }}>
+            <Text style={{ color: theme.colors.foreground }}>{subagent.name}</Text>
+            {subagent.text ? `  ${subagent.text}` : null}
+          </Text>
+        </Row>
+      ))}
       {round.recap ? (
         <>
-          {round.steps.length ? (
+          {round.steps.length || subagents.length ? (
             <View style={{ height: 1, marginVertical: 4, backgroundColor: theme.colors.border }} />
           ) : null}
           {/* Claude Code prints a recap as a bold "recap:" and the recap in italics, all dimmed. */}
@@ -241,7 +261,9 @@ export function ProgressPanel({ theme, ...target }: PluginButtonContentProps) {
         rows
       )}
       {/* A turn that has just started may have no rows yet to hold the arrows. */}
-      {round.steps.length || round.recap ? null : <View style={{ alignItems: "flex-end" }}>{arrows}</View>}
+      {round.steps.length || round.recap || subagents.length ? null : (
+        <View style={{ alignItems: "flex-end" }}>{arrows}</View>
+      )}
     </View>
   );
 }
@@ -267,11 +289,19 @@ function Mark({ color, children }: { color: string; children: string }) {
 }
 
 // One line per update, set like the pill's label: mark, text wrapping tightly, time on the right
-// and an optional trailer at the bottom right, beside the text's last line.
-function Row(props: { mark: ReactNode; at: string; muted: string; trailer?: ReactNode; children: ReactElement }) {
-  const { mark, at, muted, trailer, children } = props;
+// and an optional trailer at the bottom right, beside the text's last line. An indented row sits
+// under the step above it, its mark under that step's text.
+function Row(props: {
+  mark: ReactNode;
+  at: string;
+  muted: string;
+  indent?: boolean;
+  trailer?: ReactNode;
+  children: ReactElement;
+}) {
+  const { mark, at, muted, indent, trailer, children } = props;
   return (
-    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 6, paddingVertical: 2 }}>
+    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 6, paddingVertical: 2, paddingLeft: indent ? 17 : 0 }}>
       <View style={{ width: 11, height: LINE_HEIGHT, alignItems: "center", justifyContent: "center" }}>
         {mark}
       </View>

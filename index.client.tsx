@@ -4,11 +4,14 @@ import type {
   PluginClientContext,
 } from "@getpaseo/plugin/client";
 import { ProgressPanel, publish, QuietIcon, StepIcon } from "./client/pill";
-import { DESCRIBED_TOOLS, type Round, recapRpc, stepsRpc, type Update } from "./shared/rpc";
+import { DESCRIBED_TOOLS, type Round, recapRpc, stepsRpc, type Subagent, type Update } from "./shared/rpc";
 
 // The popover reads each agent's progress from `publish`, so updating the pill never replaces this
 // behavior, which would close an open popover.
 const PANEL: PluginButtonBehavior = { kind: "popover", Content: ProgressPanel };
+// Subagents work with no Paseo events to follow, so the plugin asks for their steps this often while
+// Claude works or any subagent runs.
+const SUBAGENT_POLL_MS = 3000;
 
 interface Agent {
   id: string;
@@ -25,8 +28,10 @@ interface Tracked {
   recap: Update | null;
   // The session's earlier rounds, oldest first.
   rounds: Round[];
+  subagents: Subagent[];
   pill?: PluginButtonRegistration;
   stopWatching?: () => void;
+  poll?: ReturnType<typeof setTimeout>;
 }
 
 export default function contribute(client: PluginClientContext) {
@@ -37,20 +42,31 @@ export default function contribute(client: PluginClientContext) {
   const render = (entry: Tracked) => {
     // Paseo reports a turn waiting on a permission prompt as running; Claude isn't working then.
     const working = entry.agent.status === "running" && !entry.agent.pendingPermissions?.length;
-    publish(entry.agent.id, { running: working, steps: entry.steps, recap: entry.recap, rounds: entry.rounds });
+    const { subagents } = entry;
+    publish(entry.agent.id, { running: working, steps: entry.steps, recap: entry.recap, rounds: entry.rounds, subagents });
+    if (!entry.poll && (working || subagents.length)) {
+      entry.poll = setTimeout(() => {
+        entry.poll = undefined;
+        if (tracked.get(entry.agent.id) === entry) loadSteps(entry);
+      }, SUBAGENT_POLL_MS);
+    }
+    // Once Claude stops, subagents still at work take the pill, newest step first, as Claude Code's spinner does.
+    const newest = subagents.reduce<Subagent | undefined>((a, b) => (a && a.at > b.at ? a : b), undefined);
+    const running = newest && `${subagents.length} ${subagents.length === 1 ? "agent" : "agents"} running`;
     // Once a session has anything to show, the pill stays: a new turn shows "Working…" until its first
     // step, and a stopped turn without steps or a recap shows the last recap there is.
     const latest =
+      (!working && newest ? `${running} · ${newest.text || newest.name}` : undefined) ??
       entry.recap?.text ??
       entry.steps.at(-1)?.text ??
       (working ? "Working…" : entry.rounds.findLast((round) => round.recap)?.recap?.text);
-    if (!latest || !(entry.rounds.length || entry.steps.length || entry.recap)) {
+    if (!latest || !(entry.rounds.length || entry.steps.length || entry.recap || subagents.length)) {
       entry.pill?.update({ visible: false });
       return;
     }
     const button = {
       title: "Status and recaps",
-      icon: working ? StepIcon : QuietIcon,
+      icon: working || newest ? StepIcon : QuietIcon,
       label: latest.replace(/\s+/g, " "),
       visible: true,
     };
@@ -67,13 +83,18 @@ export default function contribute(client: PluginClientContext) {
 
   const loadSteps = (entry: Tracked, callId?: string) =>
     client.rpc(stepsRpc, { agentId: entry.agent.id, callId }).then(
-      ({ steps, rounds }) => {
+      ({ steps, subagents, rounds }) => {
         if (tracked.get(entry.agent.id) !== entry) return;
         entry.steps = steps;
+        entry.subagents = subagents;
         if (rounds) entry.rounds = rounds;
         render(entry);
       },
-      (error) => console.error("Claude progress: steps failed", error),
+      (error) => {
+        console.error("Claude progress: steps failed", error);
+        // Renders again only to keep polling.
+        if (tracked.get(entry.agent.id) === entry) render(entry);
+      },
     );
 
   // Claude Code shows each running call by the short description Claude gave it.
@@ -106,7 +127,7 @@ export default function contribute(client: PluginClientContext) {
   const upsert = (agent: Agent) => {
     if (agent.provider !== "claude" || !agent.workspaceId) return;
     const known = tracked.get(agent.id);
-    const entry: Tracked = known ?? { agent, workspaceId: agent.workspaceId, steps: [], recap: null, rounds: [] };
+    const entry: Tracked = known ?? { agent, workspaceId: agent.workspaceId, steps: [], recap: null, rounds: [], subagents: [] };
     if (!known) {
       tracked.set(agent.id, entry);
       loadSteps(entry);
@@ -138,6 +159,7 @@ export default function contribute(client: PluginClientContext) {
   const drop = (agentId: string) => {
     const entry = tracked.get(agentId);
     entry?.stopWatching?.();
+    clearTimeout(entry?.poll);
     entry?.pill?.remove();
     tracked.delete(agentId);
   };

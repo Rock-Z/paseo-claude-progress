@@ -8,16 +8,24 @@ export const DESCRIBED_TOOLS = new Set(["Bash", "Monitor", "Agent", "Task"]);
 const updateSchema = z.object({ text: z.string(), at: z.string() });
 export type Update = z.infer<typeof updateSchema>;
 
+// A subagent still at work: its name, its latest step's description (empty before its first) and when.
+const subagentSchema = z.object({ name: z.string(), text: z.string(), at: z.string() });
+export type Subagent = z.infer<typeof subagentSchema>;
+
 // One earlier round of the session: its steps, and its recap if one was made.
 const roundSchema = z.object({ steps: z.array(updateSchema), recap: updateSchema.nullable() });
 export type Round = z.infer<typeof roundSchema>;
 
-// Claude's descriptions of its calls since the last prompt. With `callId`, waits until that call
-// is logged; without, also the earlier rounds.
+// Claude's descriptions of its calls since the last prompt, and the subagents still at work. With
+// `callId`, waits until that call is logged; without, also the earlier rounds.
 export const stepsRpc = defineRpc({
   name: "steps",
   input: z.object({ agentId: z.string(), callId: z.string().optional() }),
-  output: z.object({ steps: z.array(updateSchema), rounds: z.array(roundSchema).optional() }),
+  output: z.object({
+    steps: z.array(updateSchema),
+    subagents: z.array(subagentSchema),
+    rounds: z.array(roundSchema).optional(),
+  }),
 });
 
 // A recap in Claude Code's style of the agent's last turn, made when the turn ends, or when asked

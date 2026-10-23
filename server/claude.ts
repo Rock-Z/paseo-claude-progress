@@ -1,12 +1,12 @@
 import { execFile } from "node:child_process";
-import { mkdir, open, readFile, realpath, writeFile } from "node:fs/promises";
+import { mkdir, open, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
 import type { RpcInput } from "@getpaseo/plugin";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
-import { DESCRIBED_TOOLS, type recapRpc, type stepsRpc, type Update } from "../shared/rpc";
+import { DESCRIBED_TOOLS, type recapRpc, type stepsRpc, type Subagent, type Update } from "../shared/rpc";
 
 type Paseo = PluginHandlerContext["paseo"];
 
@@ -26,6 +26,12 @@ interface LogState {
   request?: string;
   reply?: string;
   replyId?: string;
+  // Calls whose result is logged; background calls (by call id) and tasks (by task id) that are over:
+  // a final task notification names the call, TaskStop the task.
+  results: Set<string>;
+  ended: Set<string>;
+  // Each background workflow's transcript directory, with the ids its end goes by.
+  workflows: Map<string, string[]>;
   read: Promise<void>;
 }
 
@@ -49,12 +55,18 @@ const RECAP_COMMAND = [
   "haiku", // alias for the newest Haiku
 ];
 const CLIP = 4000;
+// A task notification's call and a status other than running: the background call is over.
+const TASK_DONE = /<task-notification>\s*<task-id>[^<]*<\/task-id>\s*<tool-use-id>([^<]+)<\/tool-use-id>[\s\S]*?<status>(?!running)/g;
+// A subagent whose log hasn't changed for this long is taken as stopped, such as by a daemon restart.
+const STALE_MS = 30 * 60_000;
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
 // Recaps are saved here with the reply they follow, so a daemon restart doesn't lose them.
 const RECAP_DIR = join(process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache"), "claude-progress", "recaps");
 
 const run = promisify(execFile);
 const logs = new Map<string, LogState>();
+// When each subagent log was first seen, so subagents keep their order.
+const firstSeen = new Map<string, number>();
 // One recap per agent, kept until its next turn starts.
 const recaps = new Map<string, Promise<Update | null>>();
 // Claude agents mid-turn, from Paseo's turn hooks. Paseo can show an agent idle for a moment as its
@@ -83,7 +95,7 @@ export async function getSteps(
   { paseo }: PluginHandlerContext,
 ) {
   const path = await sessionLog(paseo, agentId);
-  if (!path) return { steps: [] };
+  if (!path) return { steps: [], subagents: [] };
   let log = await readLog(path);
   for (let waited = 0; callId && waited < STEP_WAIT_MS; waited += POLL_MS) {
     if (log.steps.some((step) => step.callId === callId)) break;
@@ -91,13 +103,54 @@ export async function getSteps(
     log = await readLog(path);
   }
   const steps = log.steps.map(update);
-  if (callId) return { steps };
+  const subagents = await runningSubagents(path, log);
+  if (callId) return { steps, subagents };
   // Without a call to wait for, the client is loading the agent: add the earlier rounds.
   const saved = await savedRecaps(recapFile(path));
   const rounds = log.rounds
     .map(({ steps, replyId }) => ({ steps: steps.map(update), recap: (replyId && saved[replyId]) || null }))
     .filter((round) => round.steps.length || round.recap);
-  return { steps, rounds };
+  return { steps, subagents, rounds };
+}
+
+// The session's subagents still at work, each with its latest step. Claude Code logs each in
+// `<session>/subagents/`, with a `.meta.json` naming it and, for an `Agent` call, the call. That call
+// ends with its result, or for a background call, a task notification. A workflow's agents are in
+// its own directory: its journal records each agent's result, and a task notification the workflow's end.
+// TaskStop ends a background agent or a workflow by its task id, which for an agent is its own id.
+async function runningSubagents(path: string, main: LogState): Promise<Subagent[]> {
+  const dir = join(path.slice(0, -".jsonl".length), "subagents");
+  const files = (await readdir(dir, { recursive: true }).catch(() => [])).filter((name) => /agent-\w+\.jsonl$/.test(name));
+  const subagents = [];
+  for (const name of files) {
+    const file = join(dir, name);
+    const { mtimeMs } = await stat(file);
+    if (Date.now() - mtimeMs > STALE_MS) continue;
+    const meta = await readFile(file.replace(/\.jsonl$/, ".meta.json"), "utf8").then(JSON.parse, () => ({}));
+    const id = basename(file, ".jsonl").slice("agent-".length);
+    const done = meta.requestShape === "background" ? main.ended : main.results;
+    if (meta.finished || main.ended.has(id) || (meta.toolUseId && done.has(meta.toolUseId))) continue;
+    const workflow = dirname(file);
+    if (main.workflows.get(workflow)?.some((end) => main.ended.has(end))) continue;
+    if ((await journalResults(workflow)).has(id)) continue;
+    const latest = (await readLog(file)).steps.at(-1);
+    if (!firstSeen.has(file)) firstSeen.set(file, firstSeen.size);
+    subagents.push({
+      file,
+      name: meta.description ?? "Subagent",
+      text: latest?.text ?? "",
+      at: latest?.at ?? new Date(mtimeMs).toISOString(),
+    });
+  }
+  subagents.sort((a, b) => (firstSeen.get(a.file) ?? 0) - (firstSeen.get(b.file) ?? 0));
+  return subagents.map(({ name, text, at }) => ({ name, text, at }));
+}
+
+// The ids of a workflow's agents that have returned; none outside a workflow.
+async function journalResults(dir: string) {
+  const journal = await readFile(join(dir, "journal.jsonl"), "utf8").catch(() => "");
+  const ids = journal.split("\n").map((line) => (line ? JSON.parse(line) : {}));
+  return new Set(ids.filter((entry) => entry.type === "result").map((entry) => entry.agentId));
 }
 
 const update = ({ text, at }: Update) => ({ text, at });
@@ -176,7 +229,16 @@ async function sessionLog(paseo: Paseo, agentId: string) {
 
 // Reads are chained per log so two callers never parse the same bytes twice.
 async function readLog(path: string) {
-  const log = logs.get(path) ?? { offset: 0, partial: "", rounds: [], steps: [], read: Promise.resolve() };
+  const log: LogState = logs.get(path) ?? {
+    offset: 0,
+    partial: "",
+    rounds: [],
+    steps: [],
+    results: new Set(),
+    ended: new Set(),
+    workflows: new Map(),
+    read: Promise.resolve(),
+  };
   logs.set(path, log);
   const next = log.read.then(() => readAppended(path, log));
   log.read = next.catch(() => undefined);
@@ -200,7 +262,18 @@ async function readAppended(path: string, log: LogState) {
     for (const line of lines) {
       const entry = JSON.parse(line);
       const content = entry.message?.content;
+      // A task notification arrives as a user message, or mid-turn as a queued command.
+      const note = [typeof content === "string" ? content : "", entry.content, entry.attachment?.prompt].join("\n");
+      for (const [, id] of note.matchAll(TASK_DONE)) log.ended.add(id);
       if (!Array.isArray(content)) continue;
+      for (const block of content.filter((block) => block.type === "tool_result")) {
+        log.results.add(block.tool_use_id);
+        const result = JSON.stringify(block.content);
+        const dir = /Transcript dir: ([^\s"\\]+)/.exec(result)?.[1];
+        if (dir) log.workflows.set(dir, [block.tool_use_id, /Task ID: (\w+)/.exec(result)?.[1] ?? ""]);
+        const stopped = /Successfully stopped task: (\w+)/.exec(result)?.[1];
+        if (stopped) log.ended.add(stopped);
+      }
       const text = content
         .filter((block) => block.type === "text")
         .map((block) => block.text)
