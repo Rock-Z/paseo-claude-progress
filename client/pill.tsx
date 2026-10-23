@@ -198,7 +198,7 @@ export function ProgressPanel({ theme, ...target }: PluginButtonContentProps) {
             <View style={{ height: 1, marginVertical: 4, backgroundColor: theme.colors.border }} />
           ) : null}
           {/* Claude Code prints a recap as a bold "recap:" and the recap in italics, all dimmed. */}
-          <Row mark={<Mark color={muted}>※</Mark>} at={round.recap.at} muted={muted} trailer={arrows}>
+          <Row mark={<Mark color={muted}>※</Mark>} at={round.recap.at} muted={muted} trailer={arrows} stacked>
             <Text style={{ color: muted }}>
               <Text style={{ fontWeight: "600" }}>recap: </Text>
               <Text style={{ fontStyle: "italic" }}>{round.recap.text}</Text>
@@ -309,9 +309,17 @@ function Branch({ color, last }: { color: string; last: boolean }) {
 }
 
 // One line per update, set like the pill's label: mark, text wrapping tightly, time on the right
-// and an optional trailer at the bottom right, beside the text's last line.
-function Row(props: { mark: ReactNode; at?: string; muted: string; trailer?: ReactNode; children: ReactElement }) {
-  const { mark, at, muted, trailer, children } = props;
+// and an optional trailer beside the time, or under it for text that wraps.
+function Row(props: {
+  mark: ReactNode;
+  at?: string;
+  muted: string;
+  trailer?: ReactNode;
+  // The trailer under the time, for text that wraps (the recap); else beside it, so a one-line row stays one line.
+  stacked?: boolean;
+  children: ReactElement;
+}) {
+  const { mark, at, muted, trailer, stacked, children } = props;
   return (
     <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 6, paddingVertical: 2 }}>
       {/* As tall as the row, so a subagent's tree line reaches the next row past wrapped text; marks
@@ -322,7 +330,13 @@ function Row(props: { mark: ReactNode; at?: string; muted: string; trailer?: Rea
       <View style={{ flex: 1 }}>
         <Text style={{ fontSize: FONT_SIZE, lineHeight: LINE_HEIGHT }}>{children}</Text>
       </View>
-      <View style={{ alignSelf: "stretch", alignItems: "flex-end", justifyContent: "space-between" }}>
+      <View
+        style={
+          stacked
+            ? { alignSelf: "stretch", alignItems: "flex-end", justifyContent: "space-between" }
+            : { flexDirection: "row", alignItems: "baseline", gap: 16 }
+        }
+      >
         <Text style={{ color: muted, fontSize: TIME_SIZE, lineHeight: LINE_HEIGHT }}>
           {at ? new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : ""}
         </Text>
