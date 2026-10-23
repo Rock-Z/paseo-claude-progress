@@ -173,9 +173,7 @@ export function ProgressPanel({ theme, ...target }: PluginButtonContentProps) {
       {/* A turn without a step yet still gives its subagents a parent, labelled like the pill. */}
       {subagents.length && !round.steps.length ? (
         <Row mark={<Spinner color={theme.colors.foreground} lineHeight={LINE_HEIGHT} />} muted={muted}>
-          <Text style={{ color: theme.colors.foreground }}>
-            {round.running ? "Working…" : `${subagents.length} ${subagents.length === 1 ? "Subagent" : "Subagents"}`}
-          </Text>
+          <Text style={{ color: theme.colors.foreground }}>{subagentLabel(subagents, round.running)}</Text>
         </Row>
       ) : null}
       {subagents.map((subagent, index) => (
@@ -293,6 +291,13 @@ function reopenAt(agentId: string, count: number) {
 
 function Mark({ color, children }: { color: string; children: string }) {
   return <Text style={{ color, fontSize: FONT_SIZE, lineHeight: LINE_HEIGHT }}>{children}</Text>;
+}
+
+// What a parent row says of its subagents: their workflow's summary if they share one, else how many.
+function subagentLabel(subagents: readonly Subagent[], working: boolean) {
+  const group = subagents[0]?.group;
+  if (group && subagents.every((subagent) => subagent.group === group)) return group;
+  return working ? "Working…" : `${subagents.length} ${subagents.length === 1 ? "Subagent" : "Subagents"}`;
 }
 
 // A subagent's tree line, drawn in its row's mark slot: down from the step above, through every

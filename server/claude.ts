@@ -30,8 +30,8 @@ interface LogState {
   // a final task notification names the call, TaskStop the task.
   results: Set<string>;
   ended: Set<string>;
-  // Each background workflow's transcript directory, with the ids its end goes by.
-  workflows: Map<string, string[]>;
+  // Each background workflow's transcript directory, with the ids its end goes by and its summary.
+  workflows: Map<string, { ends: string[]; summary?: string }>;
   read: Promise<void>;
 }
 
@@ -131,7 +131,7 @@ async function runningSubagents(path: string, main: LogState): Promise<Subagent[
     const done = meta.requestShape === "background" ? main.ended : main.results;
     if (meta.finished || main.ended.has(id) || (meta.toolUseId && done.has(meta.toolUseId))) continue;
     const workflow = dirname(file);
-    if (main.workflows.get(workflow)?.some((end) => main.ended.has(end))) continue;
+    if (main.workflows.get(workflow)?.ends.some((end) => main.ended.has(end))) continue;
     if ((await journalResults(workflow)).has(id)) continue;
     const latest = (await readLog(file)).steps.at(-1);
     if (!firstSeen.has(file)) firstSeen.set(file, firstSeen.size);
@@ -140,10 +140,11 @@ async function runningSubagents(path: string, main: LogState): Promise<Subagent[
       name: meta.description ?? "Subagent",
       text: latest?.text ?? "",
       at: latest?.at ?? new Date(mtimeMs).toISOString(),
+      group: main.workflows.get(workflow)?.summary,
     });
   }
   subagents.sort((a, b) => (firstSeen.get(a.file) ?? 0) - (firstSeen.get(b.file) ?? 0));
-  return subagents.map(({ name, text, at }) => ({ name, text, at }));
+  return subagents.map(({ file, ...subagent }) => subagent);
 }
 
 // The ids of a workflow's agents that have returned; none outside a workflow.
@@ -268,9 +269,13 @@ async function readAppended(path: string, log: LogState) {
       if (!Array.isArray(content)) continue;
       for (const block of content.filter((block) => block.type === "tool_result")) {
         log.results.add(block.tool_use_id);
-        const result = JSON.stringify(block.content);
-        const dir = /Transcript dir: ([^\s"\\]+)/.exec(result)?.[1];
-        if (dir) log.workflows.set(dir, [block.tool_use_id, /Task ID: (\w+)/.exec(result)?.[1] ?? ""]);
+        const parts = typeof block.content === "string" ? [{ text: block.content }] : (block.content ?? []);
+        const result = parts.map((part: { text?: string }) => part.text ?? "").join("\n");
+        const dir = /Transcript dir: (\S+)/.exec(result)?.[1];
+        if (dir) {
+          const ends = [block.tool_use_id, /Task ID: (\w+)/.exec(result)?.[1] ?? ""];
+          log.workflows.set(dir, { ends, summary: /Summary: (.*)/.exec(result)?.[1] });
+        }
         const stopped = /Successfully stopped task: (\w+)/.exec(result)?.[1];
         if (stopped) log.ended.add(stopped);
       }

@@ -8,8 +8,9 @@ export const DESCRIBED_TOOLS = new Set(["Bash", "Monitor", "Agent", "Task"]);
 const updateSchema = z.object({ text: z.string(), at: z.string() });
 export type Update = z.infer<typeof updateSchema>;
 
-// A subagent still at work: its name, its latest step's description (empty before its first) and when.
-const subagentSchema = z.object({ name: z.string(), text: z.string(), at: z.string() });
+// A subagent still at work: its name, its latest step's description (empty before its first) and when,
+// and for a workflow's agent, the workflow's summary.
+const subagentSchema = z.object({ name: z.string(), text: z.string(), at: z.string(), group: z.string().optional() });
 export type Subagent = z.infer<typeof subagentSchema>;
 
 // One earlier round of the session: its steps, and its recap if one was made.
