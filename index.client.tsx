@@ -52,7 +52,7 @@ export default function contribute(client: PluginClientContext) {
     }
     // Once Claude stops, subagents still at work take the pill, newest step first, as Claude Code's spinner does.
     const newest = subagents.reduce<Subagent | undefined>((a, b) => (a && a.at > b.at ? a : b), undefined);
-    const running = newest && `${subagents.length} ${subagents.length === 1 ? "agent" : "agents"} running`;
+    const running = newest && `${subagents.length} ${subagents.length === 1 ? "Subagent" : "Subagents"}`;
     // Once a session has anything to show, the pill stays: a new turn shows "Working…" until its first
     // step, and a stopped turn without steps or a recap shows the last recap there is.
     const latest =
