@@ -38,15 +38,20 @@ export default function contribute(client: PluginClientContext) {
     // Paseo reports a turn waiting on a permission prompt as running; Claude isn't working then.
     const working = entry.agent.status === "running" && !entry.agent.pendingPermissions?.length;
     publish(entry.agent.id, { running: working, steps: entry.steps, recap: entry.recap, rounds: entry.rounds });
-    const latest = entry.recap ?? entry.steps.at(-1);
-    if (!latest) {
+    // Once a session has anything to show, the pill stays: a new turn shows "Working…" until its first
+    // step, and a stopped turn without steps or a recap shows the last recap there is.
+    const latest =
+      entry.recap?.text ??
+      entry.steps.at(-1)?.text ??
+      (working ? "Working…" : entry.rounds.findLast((round) => round.recap)?.recap?.text);
+    if (!latest || !(entry.rounds.length || entry.steps.length || entry.recap)) {
       entry.pill?.update({ visible: false });
       return;
     }
     const button = {
       title: "Status and recaps",
       icon: working ? StepIcon : QuietIcon,
-      label: latest.text.replace(/\s+/g, " "),
+      label: latest.replace(/\s+/g, " "),
       visible: true,
     };
     if (entry.pill) entry.pill.update(button);

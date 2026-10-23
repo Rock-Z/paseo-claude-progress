@@ -38,6 +38,8 @@ const LINE_HEIGHT = 16;
 const TIME_SIZE = 10;
 // Leaves Paseo's popover (at most 440 px tall) room for its padding, so only this list scrolls.
 const LIST_MAX_HEIGHT = 380;
+// Scrolling turns on only past the cap: below it, a pixel of rounding would scroll the list and show a scrollbar.
+const OVERFLOW_SLACK = 2;
 // How far a swipe can pull a turn sideways in the phone sheet; past half of it, the swipe flips.
 const SWIPE = 64;
 // Puts the turn counter on the sheet's title line. Paseo leaves 12 px under the title, 4 px of page
@@ -110,6 +112,7 @@ export function ProgressPanel({ theme, ...target }: PluginButtonContentProps) {
     pending.current = null;
   };
   const [page, setPage] = useState<number | null>(null);
+  const [overflows, setOverflows] = useState(false);
   const pager = useRef<NativeScrollView>(null);
   // The pager's width, guessed from the window (the sheet's 12 px padding, less the 4 px pull-left)
   // until it is measured, so the first frame doesn't lay the text out on one line.
@@ -131,7 +134,7 @@ export function ProgressPanel({ theme, ...target }: PluginButtonContentProps) {
   const swipes = latest > 0 && sheet && Platform.OS !== "web";
   // The arrows sit at the last row's bottom right, so its text wraps beside them instead of above a line of their own.
   const arrows = latest && !swipes ? (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
+    <View style={{ flexDirection: "row", alignItems: "baseline", gap: 16 }}>
       {sheet ? null : (
         <Text style={{ color: muted, fontSize: TIME_SIZE, lineHeight: LINE_HEIGHT }}>
           {index + 1}/{latest + 1}
@@ -203,7 +206,11 @@ export function ProgressPanel({ theme, ...target }: PluginButtonContentProps) {
         <ScrollView
           ref={list}
           style={{ maxHeight: LIST_MAX_HEIGHT }}
-          onContentSizeChange={settle}
+          scrollEnabled={overflows}
+          onContentSizeChange={(_, height) => {
+            setOverflows(height > LIST_MAX_HEIGHT + OVERFLOW_SLACK);
+            settle();
+          }}
           onScroll={(event) => {
             offset.current = event.nativeEvent.contentOffset.y;
           }}
