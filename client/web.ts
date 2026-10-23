@@ -18,6 +18,7 @@ interface DomElement {
   closest(selector: string): DomElement | null;
   contains(other: unknown): boolean;
   dispatchEvent(event: unknown): boolean;
+  addEventListener(type: string, listener: () => void): void;
 }
 interface PointerLikeEvent {
   type: string;
@@ -25,6 +26,9 @@ interface PointerLikeEvent {
   relatedTarget: unknown;
   clientX: number;
   clientY: number;
+  // Which click of a multi-click this is.
+  detail: number;
+  preventDefault(): void;
   stopImmediatePropagation(): void;
   constructor: new (type: string, init: object) => unknown;
 }
@@ -35,6 +39,9 @@ declare const document: {
 
 const pills = new Set<DomElement>();
 let listening = false;
+// Whether the latest click sequence began on a node that holds the selection.
+let armed = false;
+let holding = false;
 
 // On web, fit the pill that holds this icon. Paseo gives plugin pills a 16 px icon slot where its
 // own pills size the mark to the glyph: `markWidth` does the same, and null collapses the slot and
@@ -86,6 +93,23 @@ export function widenPopover(node: unknown) {
     element.style.minWidth = POPOVER_WIDTH;
     return;
   }
+}
+
+// On web, keep quick clicks on this node from selecting text. Chrome selects the nearest word on a
+// double click even over unselectable text, and a flip can move other text under the pointer between
+// clicks; so after a click here, the rest of that multi-click selects nothing.
+export function holdSelection(node: unknown) {
+  if (Platform.OS !== "web" || !node) return;
+  (node as DomElement).addEventListener("mousedown", () => {
+    armed = true;
+  });
+  if (holding) return;
+  holding = true;
+  // Capturing, so it runs before the node's own listener: each new click sequence starts unarmed.
+  document.addEventListener("mousedown", (event) => {
+    if (event.detail === 1) armed = false;
+    else if (armed) event.preventDefault();
+  }, true);
 }
 
 function pillHolding(node: unknown) {

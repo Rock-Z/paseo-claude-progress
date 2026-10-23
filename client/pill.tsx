@@ -18,7 +18,7 @@ import {
   View,
 } from "react-native";
 import type { Round, Subagent, Update } from "../shared/rpc";
-import { fitPill, widenPopover } from "./web";
+import { fitPill, holdSelection, widenPopover } from "./web";
 
 export interface Progress {
   running: boolean;
@@ -139,7 +139,7 @@ export function ProgressPanel({ theme, ...target }: PluginButtonContentProps) {
   const swipes = latest > 0 && sheet && Platform.OS !== "web";
   // The arrows sit at the last row's bottom right, so its text wraps beside them instead of above a line of their own.
   const arrows = latest && !swipes ? (
-    <View style={{ flexDirection: "row", alignItems: "baseline", gap: 16 }}>
+    <View ref={holdSelection} style={{ flexDirection: "row", alignItems: "baseline", gap: 16 }}>
       {sheet ? null : (
         <Text style={{ color: muted, fontSize: TIME_SIZE, lineHeight: LINE_HEIGHT }}>
           {index + 1}/{latest + 1}
@@ -273,11 +273,14 @@ export function ProgressPanel({ theme, ...target }: PluginButtonContentProps) {
   );
 }
 
-// Flips between the session's rounds; dimmed at either end.
+// Flips between the session's rounds; dimmed at either end. The glyph isn't selectable, so it is never highlighted or copied.
 function Arrow(props: { label: string; color: string; disabled: boolean; onPress: () => void; children: string }) {
   return (
     <Pressable accessibilityLabel={props.label} disabled={props.disabled} onPress={props.onPress} hitSlop={8}>
-      <Text style={{ color: props.color, opacity: props.disabled ? 0.35 : 1, fontSize: 20, lineHeight: LINE_HEIGHT }}>
+      <Text
+        selectable={false}
+        style={{ color: props.color, opacity: props.disabled ? 0.35 : 1, fontSize: 20, lineHeight: LINE_HEIGHT }}
+      >
         {props.children}
       </Text>
     </Pressable>
