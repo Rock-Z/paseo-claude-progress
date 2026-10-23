@@ -170,6 +170,14 @@ export function ProgressPanel({ theme, ...target }: PluginButtonContentProps) {
           </Row>
         );
       })}
+      {/* A turn without a step yet still gives its subagents a parent, labelled like the pill. */}
+      {subagents.length && !round.steps.length ? (
+        <Row mark={<Spinner color={theme.colors.foreground} lineHeight={LINE_HEIGHT} />} muted={muted}>
+          <Text style={{ color: theme.colors.foreground }}>
+            {round.running ? "Working…" : `${subagents.length} ${subagents.length === 1 ? "Subagent" : "Subagents"}`}
+          </Text>
+        </Row>
+      ) : null}
       {subagents.map((subagent, index) => (
         <Row
           key={`subagent-${index}`}
@@ -302,7 +310,7 @@ function Branch({ color, last }: { color: string; last: boolean }) {
 
 // One line per update, set like the pill's label: mark, text wrapping tightly, time on the right
 // and an optional trailer at the bottom right, beside the text's last line.
-function Row(props: { mark: ReactNode; at: string; muted: string; trailer?: ReactNode; children: ReactElement }) {
+function Row(props: { mark: ReactNode; at?: string; muted: string; trailer?: ReactNode; children: ReactElement }) {
   const { mark, at, muted, trailer, children } = props;
   return (
     <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 6, paddingVertical: 2 }}>
@@ -316,7 +324,7 @@ function Row(props: { mark: ReactNode; at: string; muted: string; trailer?: Reac
       </View>
       <View style={{ alignSelf: "stretch", alignItems: "flex-end", justifyContent: "space-between" }}>
         <Text style={{ color: muted, fontSize: TIME_SIZE, lineHeight: LINE_HEIGHT }}>
-          {new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+          {at ? new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : ""}
         </Text>
         {trailer}
       </View>
