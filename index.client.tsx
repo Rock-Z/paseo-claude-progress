@@ -50,7 +50,8 @@ export default function contribute(client: PluginClientContext) {
         if (tracked.get(entry.agent.id) === entry) loadSteps(entry);
       }, SUBAGENT_POLL_MS);
     }
-    // Once Claude stops, subagents still at work take the pill, newest step first, as Claude Code's spinner does.
+    // Once Claude stops, subagents still at work take the pill with the newest step. Claude Code shows only their
+    // count there ("Waiting for N background agents…"); the step is what its agent rows show for each agent.
     const newest = subagents.reduce<Subagent | undefined>((a, b) => (a && a.at > b.at ? a : b), undefined);
     const running = newest && `${subagents.length} ${subagents.length === 1 ? "Subagent" : "Subagents"}`;
     // Once a session has anything to show, the pill stays: a new turn shows "Working…" until its first
